@@ -31,7 +31,7 @@ start_link() ->
 %%% behaviour callbacks
 %%%============================================================================
 init([]) ->
-  ZoneRegistryServer = {ed_zone_registry_server, 
+  ZoneRegistryServer = {ed_zone_registry_server,
     {ed_zone_registry_server, start_link, []},
     permanent, 2000, worker, [ed_zone_registry_server]},
   ZoneDataSup = {ed_zone_data_sup,

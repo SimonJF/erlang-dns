@@ -12,6 +12,7 @@
 -export([start/2, stop/1]).
 
 start(_Type, _Args) ->
+  conversation:initialise("scribble_specs", edns_conversation_conf:config()),
   case ed_sup:start_link() of
     {ok, Pid} -> {ok, Pid};
     Other -> {error, Other}

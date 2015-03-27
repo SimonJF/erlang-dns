@@ -1,78 +1,78 @@
 %% TOD - Use inet_dbs_record_adts.hrl helpers
 
 %%% 4.3.2. Algorithm
-%%% 
+%%%
 %%% The actual algorithm used by the name server will depend on the local OS
 %%% and data structures used to store RRs.  The following algorithm assumes
 %%% that the RRs are organized in several tree structures, one for each
 %%% zone, and another for the cache:
-%%% 
+%%%
 %%%    1. Set or clear the value of recursion available in the response
 %%%       depending on whether the name server is willing to provide
 %%%       recursive service.  If recursive service is available and
 %%%       requested via the RD bit in the query, go to step 5,
 %%%       otherwise step 2.
-%%% 
+%%%
 %%%    2. Search the available zones for the zone which is the nearest
 %%%       ancestor to QNAME.  If such a zone is found, go to step 3,
 %%%       otherwise step 4.
-%%% 
+%%%
 %%%    3. Start matching down, label by label, in the zone.  The
 %%%       matching process can terminate several ways:
-%%% 
+%%%
 %%%          a. If the whole of QNAME is matched, we have found the
 %%%             node.
-%%% 
+%%%
 %%%             If the data at the node is a CNAME, and QTYPE doesn't
 %%%             match CNAME, copy the CNAME RR into the answer section
 %%%             of the response, change QNAME to the canonical name in
 %%%             the CNAME RR, and go back to step 1.
-%%% 
+%%%
 %%%             Otherwise, copy all RRs which match QTYPE into the
 %%%             answer section and go to step 6.
-%%% 
+%%%
 %%%          b. If a match would take us out of the authoritative data,
 %%%             we have a referral.  This happens when we encounter a
 %%%             node with NS RRs marking cuts along the bottom of a
 %%%             zone.
-%%% 
+%%%
 %%%             Copy the NS RRs for the subzone into the authority
 %%%             section of the reply.  Put whatever addresses are
 %%%             available into the additional section, using glue RRs
 %%%             if the addresses are not available from authoritative
 %%%             data or the cache.  Go to step 4.
-%%% 
+%%%
 %%%          c. If at some label, a match is impossible (i.e., the
 %%%             corresponding label does not exist), look to see if a
 %%%             the "*" label exists.
-%%% 
+%%%
 %%%             If the "*" label does not exist, check whether the name
 %%%             we are looking for is the original QNAME in the query
-%%% 
+%%%
 %%% Mockapetris                                                    [Page 24]
-%%% 
+%%%
 %%% RFC 1034             Domain Concepts and Facilities        November 1987
-%%% 
+%%%
 %%%             or a name we have followed due to a CNAME.  If the name
 %%%             is original, set an authoritative name error in the
 %%%             response and exit.  Otherwise just exit.
-%%% 
+%%%
 %%%             If the "*" label does exist, match RRs at that node
 %%%             against QTYPE.  If any match, copy them into the answer
 %%%             section, but set the owner of the RR to be QNAME, and
 %%%             not the node with the "*" label.  Go to step 6.
-%%% 
+%%%
 %%%    4. Start matching down in the cache.  If QNAME is found in the
 %%%       cache, copy all RRs attached to it that match QTYPE into the
 %%%       answer section.  If there was no delegation from
 %%%       authoritative data, look for the best one from the cache, and
 %%%       put it in the authority section.  Go to step 6.
-%%% 
+%%%
 %%%    5. Using the local resolver or a copy of its algorithm (see
 %%%       resolver section of this memo) to answer the query.  Store
 %%%       the results, including any intermediate CNAMEs, in the answer
 %%%       section of the response.
-%%% 
+%%%
 %%%    6. Using local data only, attempt to add other RRs which may be
 %%%       useful to the additional section of the query.  Exit.
 
@@ -81,7 +81,8 @@
 -module(ed_query_resolver).
 
 %% API
--export([resolve/1]).
+%-export([resolve/2]).
+-compile(export_all).
 
 -include_lib("kernel/src/inet_dns.hrl").
 
@@ -95,48 +96,56 @@
 %%% Server Algorithm - see RFC1034 (http://tools.ietf.org/html/rfc1034)
 %%%============================================================================
 
-resolve(Q) ->
+resolve(Q, ConvKey) ->
     Q1 = set_recursion_available(Q, ?NO_RECURSION_FLAG),
     Q2 = set_response_flag(Q1),
     case length(Q2#dns_rec.qdlist) of
-    	1 -> find_zone(Q2);
-    	_ -> not_implemented_error(Q1, multiple_questions)
+    	1 -> find_zone(Q2, ConvKey);
+    	_ -> QErr = not_implemented_error(Q1, multiple_questions),
+           {done, QErr}
     end.
 
-find_zone(Q) -> 
-    DomainName = get_domain_name(Q),
-    case ed_zone_registry_server:find_nearest_zone(DomainName) of
-    	{ok, Zone} -> load_zone(Q, Zone);
-    	{error, _} -> non_existent_zone(Q)
-    end.
+find_zone(Q, ConvKey) ->
+  DomainName = get_domain_name(Q),
+  ed_zone_registry_server:find_nearest_zone(DomainName, ConvKey),
+  {not_done, Q}.
 
-load_zone(Q, Zone) ->
+load_zone(Q, ZonePID, ConvKey) ->
     Q1 = set_aa_header_flag(Q),
-    {ok, RRTree} = ed_zone_data_server:get_zone(Zone),
-    match_records(Q1, RRTree).
+    ed_zone_data_server:get_zone(ZonePID, ConvKey),
+    Q1.
+    %match_records(Q1, RRTree).
 
-match_records(Q, RRTree) ->
-    DomainName = get_domain_name(Q),  
+match_records(Q, RRTree, ConvKey) ->
+    io:format("In outer match_records~n", []),
+    DomainName = get_domain_name(Q),
     NameTails = ed_utils:tails(string:tokens(DomainName, ".")),
     Names = lists:map(fun(X) -> string:join(X, ".") end, NameTails),
-    Q1 = match_records(Q, RRTree, Names),
-    enrich_additional_section(Q1, RRTree).
+    {Atom, Q1} = match_records(Q, RRTree, Names, ConvKey),
+    Q2 = enrich_additional_section(Q1, RRTree),
+    {Atom, Q2}.
 
-match_records(Q, RRTree, []) ->
-    non_existent_domain(Q, RRTree);
-match_records(Q, RRTree, [Name|Rest]) ->
+match_records(Q, RRTree, [], ConvKey) ->
+    io:format("In terminal match_records~n", []),
+    {done, non_existent_domain(Q, RRTree)};
+match_records(Q, RRTree, [Name|Rest], ConvKey) ->
+    io:format("In step match_records~n", []),
     [#dns_query{domain=Domain, type=T, class=_C}|[]] = Q#dns_rec.qdlist,
     D = string:to_lower(Domain),
     case is_referral_match(RRTree, Name) of
-    	true ->  process_referral_match(Q, RRTree, Name);
+    	true ->
+        QRes = process_referral_match(Q, RRTree, Name),
+        {done, QRes};
     	false ->
     	    case is_qname_match(RRTree, Name, D) of
-    	    	true -> process_qname_match(Q, RRTree, Name, T);
+    	    	true -> process_qname_match(Q, RRTree, Name, T, ConvKey);
     	    	false ->
     	    	    case is_wildcard_match(RRTree, Name) of
-    	    	        true -> process_wildcard_match(Q, RRTree, Name, T);
+    	    	        true ->
+                      QRes = process_wildcard_match(Q, RRTree, Name, T),
+                      {done, QRes};
     	    	        false ->
-    	    	            match_records(Q, RRTree, Rest)
+    	    	            match_records(Q, RRTree, Rest, ConvKey)
     	    	    end
     	    end
     end.
@@ -159,7 +168,7 @@ is_referral_match(RRTree, DomainName) ->
     end.
 
 process_referral_match(Q, RRTree, DomainName) ->
-    NsList = Q#dns_rec.nslist,	
+    NsList = Q#dns_rec.nslist,
     ArList = Q#dns_rec.arlist,
     NsRRs = gb_trees:get(DomainName, RRTree),
     GlueRRs = lists:foldr(
@@ -174,28 +183,27 @@ process_referral_match(Q, RRTree, DomainName) ->
     	        		end
     	        	end
     	        	, Acc, RRs)
-    	    end 
-    	end 
+    	    end
+    	end
     	, [], NsRRs),
     Q1 = Q#dns_rec{nslist=NsList++NsRRs, arlist=ArList++GlueRRs},
     clear_aa_header_flag(Q1).
-    
-
 
 is_qname_match(RRTree, DomainName, DomainName) ->
     gb_trees:is_defined(DomainName, RRTree);
 is_qname_match(_RRTree, _DomainName, _OtherDomainName) ->
     false.
 
-process_qname_match(Q, RRTree, DomainName, Type) ->
+process_qname_match(Q, RRTree, DomainName, Type, ConvKey) ->
     case gb_trees:get(DomainName, RRTree) of
     	[RR|[]] when RR#dns_rr.type=:=cname andalso Type=/=cname ->
-    	    resolve_cname(Q, RR);
+    	    resolve_cname(Q, RR, ConvKey);
     	RRs ->
-    	    matching_rr_to_anlist(Q, RRs, Type)
+    	    QRes = matching_rr_to_anlist(Q, RRs, Type),
+          {done, QRes}
     end.
 
-resolve_cname(Q, RR) ->
+resolve_cname(Q, RR, ConvKey) ->
     % ...copy the CNAME RR into the answer section
     % of the response, change QNAME to the canonical name in
     % the CNAME RR, and go back to step 1.
@@ -206,26 +214,27 @@ resolve_cname(Q, RR) ->
         qdlist=[QD#dns_query{domain=CName}],
         anlist=[RR|AnList]
     },
-    Q2 = resolve(Q1),
-    Q2#dns_rec{qdlist=Q#dns_rec.qdlist}.
+    {Atom, Q2} = resolve(Q1, ConvKey),
+    QRes = Q2#dns_rec{qdlist=Q#dns_rec.qdlist},
+    {Atom, Q2}.
 
 matching_rr_to_anlist(Q, RRs, Type) ->
     MatchingRRs = lists:filter(
     	fun(RR) -> (RR#dns_rr.type =:= Type) or (Type =:= any) end
     	, RRs),
-    AnList = Q#dns_rec.anlist,	
+    AnList = Q#dns_rec.anlist,
     Q#dns_rec{anlist=AnList++MatchingRRs}.
 
 is_wildcard_match(RRTree, DomainName) ->
     WildCardName = re:replace(DomainName, ".*?\\.", "*.", [{return, list}]),
-    gb_trees:is_defined(WildCardName, RRTree) and 
-    not gb_trees:is_defined(DomainName, RRTree). 
+    gb_trees:is_defined(WildCardName, RRTree) and
+    not gb_trees:is_defined(DomainName, RRTree).
 
 process_wildcard_match(Q, RRTree, DomainName, Type) ->
     % If the "*" label does exist, match RRs at that node
     % against QTYPE.  If any match, copy them into the answer
     % section, but set the owner of the RR to be QNAME, and
-    % not the node with the "*" label.  
+    % not the node with the "*" label.
     [QD|[]] = Q#dns_rec.qdlist,
     WildCardName = re:replace(DomainName, ".*?\\.", "*.", [{return, list}]),
     RRs = gb_trees:get(WildCardName, RRTree),
@@ -242,7 +251,7 @@ enrich_additional_section(Q, RRTree) ->
     [QD|[]] = Q#dns_rec.qdlist,
     AnList = Q#dns_rec.anlist,
     ArList = lists:foldr(
-    	fun(RR, Acc) -> 
+    	fun(RR, Acc) ->
     		case RR#dns_rr.type of
     			mx -> enrich_additional_section_mx(RRTree, RR, Acc, QD);
     			_  -> Acc
@@ -262,7 +271,7 @@ enrich_additional_section_mx(RRTree, MxRR, ArList, _QD) ->
     	    	    case RR#dns_rr.type of
     	    	    	a -> [RR|Acc];
     	    	    	_ -> Acc
-    	    	    end 
+    	    	    end
     	    	end, ArList, RRs)
     end.
 

@@ -1,0 +1,22 @@
+module src.com.simonjf.scribbletest.HandleDNSRequest_UDPHandlerServer;
+
+type <erlang> "atom" from "" as EncodedRequest;
+type <erlang> "pid" from "" as ZonePID;
+type <erlang> "atom" from "" as RRTree;
+type <erlang> "string" from "" as DomainName;
+type <erlang> "list" from "" as StringList;
+
+local protocol HandleDNSRequest at UDPHandlerServer(role UDPHandlerServer,role DNSZoneRegServer,role DNSZoneDataServer) {
+	rec QueryResolution {
+		FindNearestZone(DomainName) to DNSZoneRegServer;
+		choice at DNSZoneRegServer {
+			ZoneResponse(ZonePID) from DNSZoneRegServer;
+		} or {
+			ZoneNotFound() from DNSZoneRegServer;
+			continue QueryResolution;
+		}
+		GetZoneData() to DNSZoneDataServer;
+		ZoneDataResponse(RRTree) from DNSZoneDataServer;
+		continue QueryResolution;
+	}
+}

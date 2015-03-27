@@ -6,14 +6,16 @@
 
 -module(ed_zone_data_server).
 
--behaviour(gen_server).
+-behaviour(ssa_gen_server).
 
 %% API
--export([start_link/1, get_zone/1, flush/1]).
+%-export([start_link/1, get_zone/1, flush/1]).
 
 %% behaviour callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-  terminate/2, code_change/3]).
+%-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+%  terminate/2, code_change/3]).
+
+-compile(export_all).
 
 -record(state, {zone_name, zone_provider, rr_tree}).
 
@@ -24,32 +26,46 @@
 %%%============================================================================
 
 start_link(Args) ->
-  gen_server:start_link(?MODULE, [Args], []).
+  io:format("In EDZDS start_link~n", []),
+  Res =ssa_gen_server:start_link(?MODULE, [Args], []),
+  io:format("Start link result: ~p~n", [Res]),
+  Res.
 
-get_zone(Pid) ->
-  gen_server:call(Pid, get_zone).
+get_zone(Pid, ConvKey) ->
+  io:format("PID in get_zone: ~p, our PID: ~p, our ConvKey:~p~n", [Pid, self(), ConvKey]),
+  conversation:invite(ConvKey, Pid, "DNSZoneDataServer"),
+  conversation:send(ConvKey, ["DNSZoneDataServer"], "GetZoneData", [], []).
 
-flush(Pid) -> 
+flush(Pid) ->
   gen_server:cast(Pid, flush).
 
 %%%============================================================================
 %%% behaviour callbacks
 %%%============================================================================
 
-
-init([{ZoneName, ZoneProvider}]) ->
-  case ed_zone_registry_server:register(ZoneName, self()) of
-    ok -> {ok, #state{zone_name=ZoneName, zone_provider=ZoneProvider}, 0};
+ssactor_init([{ZoneName, ZoneProvider}], MonitorPID) ->
+  case ed_zone_registry_server:register(ZoneName, MonitorPID) of
+    ok -> #state{zone_name=ZoneName, zone_provider=ZoneProvider};
     {error, Reason} -> {stop, Reason}
   end.
 
-handle_call(get_zone, _From, State) ->
-  {reply, {ok, State#state.rr_tree}, State};
+ssactor_join(_, _, _, State) -> {accept, State}.
+ssactor_conversation_established(_PN, _RN, _CID, _ConvKey, State) -> {ok, State}.
+ssactor_conversation_error(_, _, _, State) -> {ok, State}.
+
+ssactor_handle_message("HandleDNSRequest", "DNSZoneDataServer", _CID, _Sender,
+                       "GetZoneData", [], State, ConvKey) ->
+  io:format("State in EDZDS: ~p~n", [State]),
+  RRTree = State#state.rr_tree,
+  conversation:send(ConvKey, ["UDPHandlerServer"], "ZoneDataResponse", ["RRTree"],
+                   [RRTree]),
+  State.
+
 handle_call(_Request, _From, State) ->
   {noreply, State}.
 
 handle_cast(flush, State) ->
-  {noreply, State, 0}; %% triggers handle_info(timeout, ...
+  {noreply, State, 0};
 handle_cast(stop, State) ->
   {stop, normal, State}.
 
@@ -61,14 +77,14 @@ handle_info(timeout, #state{zone_provider={M,F,A}}=State) ->
     fun(RR, Tree) ->
       Domain = RR#dns_rr.domain,
       case gb_trees:is_defined(Domain, Tree) of
-        false -> 
+        false ->
           gb_trees:insert(Domain, [RR], Tree);
         true ->
           gb_trees:update(Domain, [RR|gb_trees:get(Domain, Tree)], Tree)
-       end 
+       end
     end, gb_trees:empty(), RRs1),
   {ok, RefreshInterval} = get_zone_expiry(RRs1),
-   {noreply, State#state{rr_tree=RRTree}, RefreshInterval}; 
+   {noreply, State#state{rr_tree=RRTree}, RefreshInterval};
 handle_info(_Info, State) ->
    {noreply, State}.
 
@@ -99,8 +115,8 @@ get_zone_expiry_from_soa(RRs) ->
   lists:foldr(
     fun(RR, Acc) ->
       case RR#dns_rr.type of
-        soa -> 
-          {_Host, _Contact, _Serial, Refresh, _Retry, _Expiry, _Min} = 
+        soa ->
+          {_Host, _Contact, _Serial, Refresh, _Retry, _Expiry, _Min} =
             RR#dns_rr.data,
           Refresh;
         _ -> Acc

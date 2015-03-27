@@ -28,7 +28,7 @@ start_link() ->
   supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %%-----------------------------------------------------------------------------
-%% @doc Starts a child worker to perforom a DNS lookup 
+%% @doc Starts a child worker to perforom a DNS lookup
 %%-----------------------------------------------------------------------------
 register_zone_provider(Args) ->
   supervisor:start_child(?SERVER, [Args]).
