@@ -1,0 +1,2 @@
+edns:register_zone_provider("multiparty.session.types", {test_zone_provider, get_zone, []}).
+edns:flush_zone("multiparty.session.types").

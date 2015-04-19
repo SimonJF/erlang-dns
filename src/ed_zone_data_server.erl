@@ -26,13 +26,10 @@
 %%%============================================================================
 
 start_link(Args) ->
-  io:format("In EDZDS start_link~n", []),
   Res =ssa_gen_server:start_link(?MODULE, [Args], []),
-  io:format("Start link result: ~p~n", [Res]),
   Res.
 
 get_zone(Pid, ConvKey) ->
-  io:format("PID in get_zone: ~p, our PID: ~p, our ConvKey:~p~n", [Pid, self(), ConvKey]),
   conversation:invite(ConvKey, Pid, "DNSZoneDataServer"),
   conversation:send(ConvKey, ["DNSZoneDataServer"], "GetZoneData", [], []).
 
@@ -55,7 +52,6 @@ ssactor_conversation_error(_, _, _, State) -> {ok, State}.
 
 ssactor_handle_message("HandleDNSRequest", "DNSZoneDataServer", _CID, _Sender,
                        "GetZoneData", [], State, ConvKey) ->
-  io:format("State in EDZDS: ~p~n", [State]),
   RRTree = State#state.rr_tree,
   conversation:send(ConvKey, ["UDPHandlerServer"], "ZoneDataResponse", ["RRTree"],
                    [RRTree]),

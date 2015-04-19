@@ -68,7 +68,6 @@ ssactor_handle_message("HandleDNSRequest", "DNSZoneRegServer", _CID, _Sender,
 
 
 handle_call({register, ZoneName, Pid}, _From, State) ->
-  io:format("ZoneName: ~s; State: ~p~n", [ZoneName, State]),
   case gb_trees:is_defined(ZoneName, State) of
   	false ->
   	  error_logger:info_msg("Zone ~p registered.", [ZoneName]),

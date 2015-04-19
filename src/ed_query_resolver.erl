@@ -117,7 +117,6 @@ load_zone(Q, ZonePID, ConvKey) ->
     %match_records(Q1, RRTree).
 
 match_records(Q, RRTree, ConvKey) ->
-    io:format("In outer match_records~n", []),
     DomainName = get_domain_name(Q),
     NameTails = ed_utils:tails(string:tokens(DomainName, ".")),
     Names = lists:map(fun(X) -> string:join(X, ".") end, NameTails),
@@ -126,10 +125,8 @@ match_records(Q, RRTree, ConvKey) ->
     {Atom, Q2}.
 
 match_records(Q, RRTree, [], ConvKey) ->
-    io:format("In terminal match_records~n", []),
     {done, non_existent_domain(Q, RRTree)};
 match_records(Q, RRTree, [Name|Rest], ConvKey) ->
-    io:format("In step match_records~n", []),
     [#dns_query{domain=Domain, type=T, class=_C}|[]] = Q#dns_rec.qdlist,
     D = string:to_lower(Domain),
     case is_referral_match(RRTree, Name) of

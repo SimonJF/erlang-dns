@@ -49,7 +49,6 @@ ssactor_init([Parent, {udp, Socket, IP, Port, ReqBin}], MonitorPID) ->
 ssactor_join(_, _, _, State) -> {accept, State}.
 ssactor_conversation_established(_PN, _RN, _CID, ConvKey, State) ->
   error_logger:info_msg("DNS Handling session established.~n", []),
-  io:format("State in connection established: ~p~n", [State]),
   SocketTriple = State#dns_handler_state.socket_triple,
   Query = State#dns_handler_state.query,
   InitialQueryRes = answer_query(SocketTriple, Query, ConvKey),
@@ -71,14 +70,12 @@ ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
 
 ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
                        "ZoneDataResponse", [RRTree], State, ConvKey) ->
-  io:format("ED UDP Handler Server State: ~p~n", [State]),
   SocketTriple = State#dns_handler_state.socket_triple,
   Query = State#dns_handler_state.query,
   Resolver = get_resolver(),
   % At this stage, the query will either be done (either completed or an error),
   % or will require a recursive zone lookup.
   MatchRes = Resolver:match_records(Query, RRTree, ConvKey),
-  io:format("After match records call~n", []),
   case MatchRes of
     {not_done, Q} -> State#dns_handler_state{query=Q};
     {done, Q} -> send_response(SocketTriple, Q),
