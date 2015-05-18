@@ -64,7 +64,7 @@ ssactor_handle_message("HandleDNSRequest", "DNSZoneRegServer", _CID, _Sender,
       Pid = gb_trees:get(H, State),
       conversation:send(ConvKey, ["UDPHandlerServer"], "ZoneResponse", ["ZonePID"], [Pid])
   end,
-  State.
+  {ok, State}.
 
 
 handle_call({register, ZoneName, Pid}, _From, State) ->

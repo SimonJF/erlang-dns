@@ -66,7 +66,7 @@ ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
   Query = State#dns_handler_state.query,
   Resolver = get_resolver(),
   Q1 = Resolver:load_zone(Query, Response, ConvKey),
-  State#dns_handler_state{query=Q1};
+  {ok, State#dns_handler_state{query=Q1}};
 
 ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
                        "ZoneDataResponse", [RRTree], State, ConvKey) ->
@@ -77,9 +77,9 @@ ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
   % or will require a recursive zone lookup.
   MatchRes = Resolver:match_records(Query, RRTree, ConvKey),
   case MatchRes of
-    {not_done, Q} -> State#dns_handler_state{query=Q};
+    {not_done, Q} -> {ok, State#dns_handler_state{query=Q}};
     {done, Q} -> send_response(SocketTriple, Q),
-                 State
+                 {ok, State}
   end;
 
 ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
@@ -91,7 +91,7 @@ ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
   % or will require a recursive zone lookup.
   RespQ = Resolver:non_existent_zone(Query),
   send_response(SocketTriple, RespQ),
-  State.
+  {ok, State}.
 
 %%%============================================================================
 %%% Internal

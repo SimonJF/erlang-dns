@@ -55,7 +55,7 @@ ssactor_handle_message("HandleDNSRequest", "DNSZoneDataServer", _CID, _Sender,
   RRTree = State#state.rr_tree,
   conversation:send(ConvKey, ["UDPHandlerServer"], "ZoneDataResponse", ["RRTree"],
                    [RRTree]),
-  State.
+  {ok, State}.
 
 handle_call(_Request, _From, State) ->
   {noreply, State}.
