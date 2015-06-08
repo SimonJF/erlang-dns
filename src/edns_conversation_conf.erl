@@ -2,6 +2,9 @@
 -export([config/0]).
 
 config() ->
-  [{ed_zone_data_server, [{"HandleDNSRequest", ["DNSZoneDataServer"]}]},
+  [{ed_zone_data_server, [{"GetZoneData", ["DNSZoneDataServer"]}]},
    {ed_zone_registry_server, [{"HandleDNSRequest", ["DNSZoneRegServer"]}]},
-   {ed_udp_handler_server, [{"HandleDNSRequest", ["UDPHandlerServer"]}]}].
+   {ed_udp_handler_server,
+    [{"HandleDNSRequest", ["UDPHandlerServer"]},
+     {"GetZoneData", ["UDPHandlerServer"]}]
+   }].

@@ -38,5 +38,5 @@ init([]) ->
     {ed_zone_data_sup, start_link, []},
     permanent, 2000, supervisor, [ed_zone_data_sup]},
   Children = [ZoneRegistryServer, ZoneDataSup],
-  RestartStrategy = {one_for_one, 3600, 4},
+  RestartStrategy = {one_for_one, 3600, 4000},
   {ok, {RestartStrategy, Children}}.

@@ -47,8 +47,10 @@ ssactor_init([Parent, {udp, Socket, IP, Port, ReqBin}], MonitorPID) ->
   %exit(normal).
 
 ssactor_join(_, _, _, State) -> {accept, State}.
-ssactor_conversation_established(_PN, _RN, _CID, ConvKey, State) ->
+% Main protocol
+ssactor_conversation_established("HandleDNSRequest", _RN, _CID, ConvKey, State) ->
   error_logger:info_msg("DNS Handling session established.~n", []),
+  conversation:register_conversation(main_session, ConvKey),
   SocketTriple = State#dns_handler_state.socket_triple,
   Query = State#dns_handler_state.query,
   InitialQueryRes = answer_query(SocketTriple, Query, ConvKey),
@@ -56,8 +58,15 @@ ssactor_conversation_established(_PN, _RN, _CID, ConvKey, State) ->
     {not_done, Q} -> {ok, State#dns_handler_state{query=Q}};
     {done, Q} -> send_response(SocketTriple, Q),
                  {ok, State}
-  end.
-ssactor_conversation_error(_, _, _, State) -> {ok, State}.
+  end;
+% Subsession
+ssactor_conversation_established("GetZoneData", _RN, _CID, ConvKey, State) ->
+  conversation:send(ConvKey, ["DNSZoneDataServer"], "ZoneDataRequest", [], []),
+  {ok, State}.
+
+ssactor_conversation_error(_, _, _, State) ->
+  exit(conversation_error),
+  {ok, State}.
 
 
 ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
@@ -68,8 +77,26 @@ ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
   Q1 = Resolver:load_zone(Query, Response, ConvKey),
   {ok, State#dns_handler_state{query=Q1}};
 
-ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
+ssactor_handle_message("GetZoneData", "UDPHandlerServer", _CID, _Sender,
                        "ZoneDataResponse", [RRTree], State, ConvKey) ->
+  % Subsession's done: pass the response back
+  conversation:become(ConvKey, main_session, "UDPHandlerServer",
+                      continue_resolution, [RRTree]),
+  conversation:end_conversation(ConvKey, normal),
+  {ok, State};
+ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
+                       "InvalidZone", [], State, _ConvKey) ->
+  SocketTriple = State#dns_handler_state.socket_triple,
+  Query = State#dns_handler_state.query,
+  Resolver = get_resolver(),
+  RespQ = Resolver:non_existent_zone(Query),
+  % Deliver the bad news to the client
+  send_response(SocketTriple, RespQ),
+  {ok, State}.
+
+
+ssactor_become("HandleDNSRequest", "UDPHandlerServer", continue_resolution, [RRTree],
+               ConvKey, State) ->
   SocketTriple = State#dns_handler_state.socket_triple,
   Query = State#dns_handler_state.query,
   Resolver = get_resolver(),
@@ -80,18 +107,8 @@ ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
     {not_done, Q} -> {ok, State#dns_handler_state{query=Q}};
     {done, Q} -> send_response(SocketTriple, Q),
                  {ok, State}
-  end;
+  end.
 
-ssactor_handle_message("HandleDNSRequest", "UDPHandlerServer", _CID, _Sender,
-                       "ZoneNotFound", [], State, ConvKey) ->
-  SocketTriple = State#dns_handler_state.socket_triple,
-  Query = State#dns_handler_state.query,
-  Resolver = get_resolver(),
-  % At this stage, the query will either be done (either completed or an error),
-  % or will require a recursive zone lookup.
-  RespQ = Resolver:non_existent_zone(Query),
-  send_response(SocketTriple, RespQ),
-  {ok, State}.
 
 %%%============================================================================
 %%% Internal

@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -v
-dig @localhost -p 1053 multiparty.session.types
+dig @localhost -p 1053 +tries=1 multiparty.session.types
 

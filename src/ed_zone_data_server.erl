@@ -30,8 +30,9 @@ start_link(Args) ->
   Res.
 
 get_zone(Pid, ConvKey) ->
-  conversation:invite(ConvKey, Pid, "DNSZoneDataServer"),
-  conversation:send(ConvKey, ["DNSZoneDataServer"], "GetZoneData", [], []).
+  %conversation:invite(ConvKey, Pid, "DNSZoneDataServer"),
+  conversation:subsession(ConvKey, "GetZoneData", ["UDPHandlerServer"],
+                          [{"DNSZoneDataServer", Pid}]).
 
 flush(Pid) ->
   gen_server:cast(Pid, flush).
@@ -50,12 +51,15 @@ ssactor_join(_, _, _, State) -> {accept, State}.
 ssactor_conversation_established(_PN, _RN, _CID, _ConvKey, State) -> {ok, State}.
 ssactor_conversation_error(_, _, _, State) -> {ok, State}.
 
-ssactor_handle_message("HandleDNSRequest", "DNSZoneDataServer", _CID, _Sender,
-                       "GetZoneData", [], State, ConvKey) ->
+ssactor_handle_message("GetZoneData", "DNSZoneDataServer", _CID, _Sender,
+                       "ZoneDataRequest", [], State, ConvKey) ->
   RRTree = State#state.rr_tree,
   conversation:send(ConvKey, ["UDPHandlerServer"], "ZoneDataResponse", ["RRTree"],
                    [RRTree]),
   {ok, State}.
+
+
+ssactor_conversation_ended(_CID, _Reason, State) -> {ok, State}.
 
 handle_call(_Request, _From, State) ->
   {noreply, State}.

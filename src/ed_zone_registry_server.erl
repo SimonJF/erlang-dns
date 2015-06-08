@@ -47,46 +47,52 @@ find_nearest_zone(DomainName, ConvKey) ->
 
 ssactor_init([], _MonitorPID) ->
   %{ok, gb_trees:empty()}.
-  gb_trees:empty().
+  {0, gb_trees:empty()}.
 ssactor_join(_, _, _, State) -> {accept, State}.
 ssactor_conversation_established(_PN, _RN, _CID, _ConvKey, State) -> {ok, State}.
 ssactor_conversation_error(_, _, _, State) -> {ok, State}.
 
 ssactor_handle_message("HandleDNSRequest", "DNSZoneRegServer", _CID, _Sender,
                        "FindNearestZone", [DomainName], State, ConvKey) ->
-  NameTails = ed_utils:tails(string:tokens(DomainName, ".")),
-  Names = lists:map(fun(X) -> string:join(X, ".") end, NameTails),
-  IsZoneNotDefined = fun(Z) -> not gb_trees:is_defined(Z, State) end,
-  case lists:dropwhile(IsZoneNotDefined, Names) of
-  	[] ->
-      conversation:send(ConvKey, ["UDPHandlerServer"], "ZoneNotFound", [], []);
-  	[H|_] ->
-      Pid = gb_trees:get(H, State),
-      conversation:send(ConvKey, ["UDPHandlerServer"], "ZoneResponse", ["ZonePID"], [Pid])
-  end,
-  {ok, State}.
+  {NumRequests, GBTree} = State,
+  % Die on the third request
+  if NumRequests == 9000 ->
+       exit(booooom);
+     true ->
+      NameTails = ed_utils:tails(string:tokens(DomainName, ".")),
+      Names = lists:map(fun(X) -> string:join(X, ".") end, NameTails),
+      IsZoneNotDefined = fun(Z) -> not gb_trees:is_defined(Z, GBTree) end,
+      case lists:dropwhile(IsZoneNotDefined, Names) of
+        [] ->
+          conversation:send(ConvKey, ["UDPHandlerServer"], "InvalidZone", [], []);
+        [H|_] ->
+          Pid = gb_trees:get(H, GBTree),
+          conversation:send(ConvKey, ["UDPHandlerServer"], "ZoneResponse", ["ZonePID"], [Pid])
+      end,
+      {ok, {NumRequests + 1, GBTree}}
+  end.
 
 
-handle_call({register, ZoneName, Pid}, _From, State) ->
-  case gb_trees:is_defined(ZoneName, State) of
+handle_call({register, ZoneName, Pid}, _From, State={NumRequests, GBTree}) ->
+  case gb_trees:is_defined(ZoneName, GBTree) of
   	false ->
   	  error_logger:info_msg("Zone ~p registered.", [ZoneName]),
-  	  {reply, ok, gb_trees:insert(ZoneName, Pid, State)};
+  	  {reply, ok, {NumRequests, gb_trees:insert(ZoneName, Pid, GBTree)}};
   	true ->
   	  {reply, {error, zone_already_registered}, State}
   end;
-handle_call({deregister, ZoneName}, _From, State) ->
-  case gb_trees:is_defined(ZoneName, State) of
+handle_call({deregister, ZoneName}, _From, State={NR, GBTree}) ->
+  case gb_trees:is_defined(ZoneName, GBTree) of
   	true ->
   	  error_logger:info_msg("Zone ~p deregistered.", [ZoneName]),
-  	  {reply, ok, gb_trees:delete(ZoneName, State)};
+  	  {reply, ok, {NR, gb_trees:delete(ZoneName, GBTree)}};
   	false ->
   	  {reply, {error, zone_not_registered}, State}
   end;
-handle_call({get, ZoneName}, _From, State) ->
-  case gb_trees:is_defined(ZoneName, State) of
+handle_call({get, ZoneName}, _From, State={_NR, GBTree}) ->
+  case gb_trees:is_defined(ZoneName, GBTree) of
   	true ->
-  	  {reply, {ok, gb_trees:get(ZoneName,State)}, State};
+  	  {reply, {ok, gb_trees:get(ZoneName,GBTree)}, State};
   	false ->
   	  {reply, {error, zone_not_registered}, State}
   end;
