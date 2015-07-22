@@ -56,7 +56,7 @@ ssactor_handle_message("HandleDNSRequest", "DNSZoneRegServer", _CID, _Sender,
                        "FindNearestZone", [DomainName], State, ConvKey) ->
   {NumRequests, GBTree} = State,
   % Die on the third request
-  if NumRequests == 9000 ->
+  if NumRequests == 2 ->
        exit(booooom);
      true ->
       NameTails = ed_utils:tails(string:tokens(DomainName, ".")),

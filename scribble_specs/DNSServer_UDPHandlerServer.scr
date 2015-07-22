@@ -12,7 +12,9 @@ local protocol HandleDNSRequest at UDPHandlerServer(role UDPHandlerServer,role D
 		FindNearestZone(DomainName) to DNSZoneRegServer;
 		choice at DNSZoneRegServer {
 			ZoneResponse(ZonePID) from DNSZoneRegServer;
-			continue QueryResolution;
+			UDPHandlerServer initiates GetZoneData( UDPHandlerServer , new DNSZoneDataServer ) {
+				continue QueryResolution;
+			}
 		} or {
 			InvalidZone() from DNSZoneRegServer;
 		}

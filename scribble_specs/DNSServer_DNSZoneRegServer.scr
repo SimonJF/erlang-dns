@@ -12,7 +12,6 @@ local protocol HandleDNSRequest at DNSZoneRegServer(role UDPHandlerServer,role D
 		FindNearestZone(DomainName) from UDPHandlerServer;
 		choice at DNSZoneRegServer {
 			ZoneResponse(ZonePID) to UDPHandlerServer;
-			continue QueryResolution;
 		} or {
 			InvalidZone() to UDPHandlerServer;
 		}

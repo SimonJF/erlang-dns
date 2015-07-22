@@ -31,8 +31,8 @@ start_link(Args) ->
 
 get_zone(Pid, ConvKey) ->
   %conversation:invite(ConvKey, Pid, "DNSZoneDataServer"),
-  conversation:subsession(ConvKey, "GetZoneData", ["UDPHandlerServer"],
-                          [{"DNSZoneDataServer", Pid}]).
+  conversation:start_subsession(ConvKey, "GetZoneData", ["UDPHandlerServer"],
+                                [{"DNSZoneDataServer", Pid}]).
 
 flush(Pid) ->
   gen_server:cast(Pid, flush).
